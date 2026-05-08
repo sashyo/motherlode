@@ -1,17 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTideCloak } from "@tidecloak/nextjs";
 import { ASSETS } from "../lib/mock";
 
 const fmtUsd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 export default function Send() {
+  const { hasRealmRole, secureFetch } = useTideCloak();
+  const isAdmin = hasRealmRole("walletAdmin");
+
   const [symbol, setSymbol] = useState(ASSETS[0].symbol);
   const [address, setAddress] = useState("");
   const [amount, setAmount] = useState("");
   const [speed, setSpeed] = useState<"standard" | "fast" | "instant">("fast");
   const [submitted, setSubmitted] = useState<null | { hash: string }>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const asset = useMemo(() => ASSETS.find((a) => a.symbol === symbol)!, [symbol]);
   const amountNum = Number(amount) || 0;
@@ -21,15 +27,34 @@ export default function Send() {
 
   const valid = address.startsWith("0x") && address.length >= 10 && amountNum > 0 && amountNum <= asset.balance;
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!valid) return;
-    const hash =
-      "0x" +
-      Array.from({ length: 16 }, () =>
-        Math.floor(Math.random() * 16).toString(16)
-      ).join("");
-    setSubmitted({ hash });
+    if (!valid || busy) return;
+    setBusy(true);
+    setSubmitError(null);
+    try {
+      // secureFetch attaches the DPoP-bound bearer token. The /api/wallet/send
+      // route enforces the walletAdmin role server-side via withRole().
+      const res = await secureFetch(`${window.location.origin}/api/wallet/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset: asset.symbol, amount: String(amountNum), to: address }),
+      });
+      if (res.status === 403) {
+        setSubmitError("Forbidden: walletAdmin role required for transmission.");
+        return;
+      }
+      if (!res.ok) {
+        setSubmitError(`Transmission rejected (HTTP ${res.status}).`);
+        return;
+      }
+      const data: { txId: string } = await res.json();
+      setSubmitted({ hash: data.txId });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (submitted) {
@@ -77,6 +102,21 @@ export default function Send() {
             <span className="glitch" data-text="Send">Send</span>
           </h1>
         </div>
+
+        {!isAdmin && (
+          <div className="border border-[var(--magenta)] bg-[var(--magenta)]/5 px-4 py-3 font-mono text-[11px] tracking-widest text-[var(--magenta)]">
+            ⊘ ROLE REQUIRED · walletAdmin
+            <div className="text-[10px] tracking-wider text-[var(--fg-dim)] mt-1 normal-case">
+              your tide identity does not carry this role. the api will reject submissions with 403.
+            </div>
+          </div>
+        )}
+
+        {submitError && (
+          <div className="border border-[var(--magenta)] bg-[var(--magenta)]/5 px-4 py-3 font-mono text-[11px] tracking-widest text-[var(--magenta)]">
+            ⊘ {submitError}
+          </div>
+        )}
 
         <div className="space-y-2">
           <Label>Asset</Label>
@@ -173,10 +213,16 @@ export default function Send() {
 
         <button
           type="submit"
-          disabled={!valid}
+          disabled={!valid || busy || !isAdmin}
           className="btn-neon magenta w-full !py-3.5 disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          {valid ? "▲ Authorize Transmission" : "⊘ Awaiting input"}
+          {busy
+            ? "▲ Broadcasting..."
+            : !isAdmin
+            ? "⊘ walletAdmin role required"
+            : valid
+            ? "▲ Authorize Transmission"
+            : "⊘ Awaiting input"}
         </button>
       </form>
     </div>

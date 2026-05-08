@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTideCloak } from "@tidecloak/nextjs";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import Dashboard from "./components/Dashboard";
@@ -20,7 +21,16 @@ const TITLES: Record<View, string> = {
 };
 
 export default function Page() {
+  const { authenticated, isInitializing, login } = useTideCloak();
   const [view, setView] = useState<View>("dashboard");
+
+  if (isInitializing) {
+    return <SplashScreen label="initializing secure session..." />;
+  }
+
+  if (!authenticated) {
+    return <LoginScreen onLogin={login} />;
+  }
 
   return (
     <div className="flex flex-1 min-h-screen">
@@ -40,6 +50,46 @@ export default function Page() {
           <span>BLK 1,924,401 · 12 GWEI · 14 PEERS</span>
         </footer>
       </main>
+    </div>
+  );
+}
+
+function SplashScreen({ label }: { label: string }) {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-screen">
+      <div className="font-mono text-[11px] tracking-[0.4em] text-[var(--fg-dim)]">
+        <span className="pulse-dot inline-block mr-3" />
+        {label.toUpperCase()}
+      </div>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-screen p-6">
+      <div className="max-w-md w-full corner-frame box-glow-cyan scanline bg-[var(--bg-panel)]/60 border border-[var(--border)] p-8 space-y-6">
+        <div>
+          <div className="font-mono text-[10px] tracking-[0.4em] text-[var(--lime)]">
+            ▣ TIDE / SECURE ENCLAVE
+          </div>
+          <h1 className="font-mono text-3xl mt-2 glitch text-[var(--cyan)] glow-cyan" data-text="// MOTHERLODE">
+            // MOTHERLODE
+          </h1>
+        </div>
+        <div className="divider-h" />
+        <p className="font-mono text-xs tracking-wider text-[var(--fg-dim)] leading-relaxed">
+          authentication is delegated to the tide network. your identity keys
+          never leave the threshold orks. press authorize to begin the
+          challenge-response.
+        </p>
+        <button onClick={onLogin} className="btn-neon magenta w-full !py-3.5">
+          ▲ Authorize Identity
+        </button>
+        <div className="font-mono text-[10px] tracking-widest text-[var(--fg-dim)] text-center">
+          NO PASSWORD STORED · T-OF-N THRESHOLD
+        </div>
+      </div>
     </div>
   );
 }

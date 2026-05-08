@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTideCloak } from "@tidecloak/nextjs";
 import { TRANSACTIONS, type Tx } from "../lib/mock";
 import { KindGlyph, StatusPill } from "./Dashboard";
+
+type LiveEvent = { id: string; kind: string; asset: string; amount: string; at: string };
+type LiveResponse = { user: string; events: LiveEvent[] };
 
 const fmtUsd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -18,8 +22,32 @@ const FILTERS: { id: Filter; label: string }[] = [
 ];
 
 export default function Activity() {
+  const { secureFetch, authenticated } = useTideCloak();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [live, setLive] = useState<LiveResponse | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await secureFetch(`${window.location.origin}/api/wallet/activity`);
+        if (!res.ok) {
+          if (!cancelled) setLiveError(`HTTP ${res.status}`);
+          return;
+        }
+        const data = (await res.json()) as LiveResponse;
+        if (!cancelled) setLive(data);
+      } catch (err) {
+        if (!cancelled) setLiveError(err instanceof Error ? err.message : "fetch failed");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, secureFetch]);
 
   const list = useMemo(() => {
     return TRANSACTIONS.filter((tx) => {
@@ -66,6 +94,26 @@ export default function Activity() {
             />
           </div>
         </div>
+      </section>
+
+      <section className="corner-frame bg-[var(--bg-panel)]/40 border border-[var(--border)] px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="font-mono text-[10px] tracking-[0.3em] text-[var(--fg-dim)]">
+          ▣ JWT-VERIFIED FEED
+        </div>
+        {liveError ? (
+          <div className="font-mono text-[11px] tracking-widest text-[var(--magenta)]">
+            ⊘ {liveError.toUpperCase()}
+          </div>
+        ) : live ? (
+          <div className="font-mono text-[11px] tracking-widest text-[var(--lime)]">
+            ✓ {live.events.length} EVENT(S) · VERIFIED FOR {live.user.toUpperCase()}
+          </div>
+        ) : (
+          <div className="font-mono text-[11px] tracking-widest text-[var(--fg-dim)]">
+            <span className="pulse-dot inline-block mr-2" />
+            FETCHING...
+          </div>
+        )}
       </section>
 
       <section className="corner-frame bg-[var(--bg-panel)]/60 border border-[var(--border)] overflow-hidden">

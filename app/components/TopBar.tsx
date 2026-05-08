@@ -1,8 +1,12 @@
 "use client";
 
+import { useTideCloak } from "@tidecloak/nextjs";
 import { WALLET_ADDRESS } from "../lib/mock";
 
 export default function TopBar({ title }: { title: string }) {
+  const { getValueFromIdToken, logout } = useTideCloak();
+  const username = (getValueFromIdToken("preferred_username") as string | undefined) ?? "anon";
+
   return (
     <header className="flex items-center justify-between gap-4 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg-panel)]/40 backdrop-blur-sm">
       <div className="flex items-center gap-4">
@@ -26,11 +30,15 @@ export default function TopBar({ title }: { title: string }) {
         </button>
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 border border-[var(--border)] font-mono text-[11px] tracking-wider text-[var(--fg-dim)]">
           <span className="pulse-dot" />
-          SECURE
+          TIDE · {username.toUpperCase()}
         </div>
-        <div className="w-9 h-9 border border-[var(--border-hot)] flex items-center justify-center font-mono text-xs text-[var(--cyan)]">
-          ID
-        </div>
+        <button
+          onClick={logout}
+          title="Sign out"
+          className="w-9 h-9 border border-[var(--border-hot)] flex items-center justify-center font-mono text-xs text-[var(--cyan)] hover:bg-[var(--cyan)]/10 transition-colors"
+        >
+          ⏻
+        </button>
       </div>
     </header>
   );
