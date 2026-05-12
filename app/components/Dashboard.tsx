@@ -1,19 +1,42 @@
 "use client";
 
-import { ASSETS, SPARKLINE, TRANSACTIONS, totalUsd } from "../lib/mock";
+import { useEffect, useState } from "react";
+import { SPARKLINE, TRANSACTIONS } from "../lib/mock";
 import Sparkline from "./Sparkline";
-
-const fmtUsd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+import { useChain } from "../lib/chains/ChainContext";
+import { CHAIN_META, CHAIN_ORDER } from "../lib/chains/registry";
+import type { ChainId } from "../lib/chains/types";
 
 export default function Dashboard({
   onNav,
 }: {
   onNav: (v: "send" | "receive" | "assets" | "activity") => void;
 }) {
-  const total = totalUsd(ASSETS);
-  const change = 1.84; // mocked aggregate %
-  const top = [...ASSETS].sort((a, b) => b.balance * b.priceUsd - a.balance * a.priceUsd).slice(0, 4);
+  const { activeId, activeMeta, getAdapter, publicKey } = useChain();
+  const [activeBalance, setActiveBalance] = useState<string>("···");
+  const [implementedCount, setImplementedCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setActiveBalance("···");
+    (async () => {
+      try {
+        const adapter = await getAdapter(activeId);
+        const address = await adapter.deriveAddress(publicKey);
+        const bal = await adapter.getBalance(address);
+        if (!cancelled) setActiveBalance(bal.formatted);
+      } catch {
+        if (!cancelled) setActiveBalance("0");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeId, getAdapter, publicKey]);
+
+  useEffect(() => {
+    setImplementedCount(CHAIN_ORDER.filter((id) => CHAIN_META[id].implemented).length);
+  }, []);
 
   return (
     <div className="p-6 space-y-6">
@@ -22,24 +45,21 @@ export default function Dashboard({
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
           <div>
             <div className="font-mono text-[10px] tracking-[0.4em] text-[var(--fg-dim)] mb-3">
-              ▣ TOTAL ASSETS / USD
+              ▣ ACTIVE / {activeMeta.name.toUpperCase()} BALANCE
             </div>
-            <div className="ticker font-mono text-5xl lg:text-6xl text-[var(--cyan)] glow-cyan">
-              {fmtUsd(total)}
+            <div className="ticker font-mono text-5xl lg:text-6xl glow-cyan" style={{ color: activeMeta.color }}>
+              {activeBalance}
+              <span className="text-2xl text-[var(--fg-dim)] ml-3 tracking-widest">
+                {activeMeta.nativeSymbol}
+              </span>
             </div>
             <div className="mt-3 flex items-center gap-3 font-mono text-xs">
-              <span
-                className={`px-2 py-1 border ${
-                  change >= 0
-                    ? "border-[var(--lime)]/50 text-[var(--lime)]"
-                    : "border-[var(--rose)]/50 text-[var(--rose)]"
-                }`}
-              >
-                {change >= 0 ? "▲" : "▼"} {Math.abs(change).toFixed(2)}%
+              <span className="px-2 py-1 border border-[var(--cyan)]/50 text-[var(--cyan)]">
+                {activeMeta.network.toUpperCase()}
               </span>
-              <span className="text-[var(--fg-dim)] tracking-widest">24H</span>
+              <span className="text-[var(--fg-dim)] tracking-widest">{activeMeta.serialization}</span>
               <span className="text-[var(--fg-dim)]">·</span>
-              <span className="text-[var(--fg-dim)] tracking-widest">{ASSETS.length} ASSETS</span>
+              <span className="text-[var(--fg-dim)] tracking-widest">{implementedCount}/{CHAIN_ORDER.length} ADAPTERS</span>
             </div>
           </div>
 
@@ -51,7 +71,7 @@ export default function Dashboard({
               ⇩ Receive
             </button>
             <button onClick={() => onNav("assets")} className="btn-neon lime">
-              ◇ Swap
+              ◇ All Chains
             </button>
           </div>
         </div>
@@ -71,7 +91,7 @@ export default function Dashboard({
         <div className="xl:col-span-2 corner-frame bg-[var(--bg-panel)]/60 border border-[var(--border)] p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-mono text-xs tracking-[0.3em] text-[var(--fg-dim)]">
-              ▣ TOP HOLDINGS
+              ▣ CHAIN MATRIX
             </h2>
             <button
               onClick={() => onNav("assets")}
@@ -80,44 +100,10 @@ export default function Dashboard({
               VIEW ALL ▸
             </button>
           </div>
-          <div className="space-y-3">
-            {top.map((a) => {
-              const value = a.balance * a.priceUsd;
-              const pct = (value / total) * 100;
-              return (
-                <div key={a.symbol} className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="w-7 h-7 flex items-center justify-center font-mono text-[10px] tracking-wider border"
-                        style={{ borderColor: a.color, color: a.color }}
-                      >
-                        {a.symbol.slice(0, 3)}
-                      </span>
-                      <div>
-                        <div className="font-mono text-sm text-[var(--fg)]">{a.name}</div>
-                        <div className="font-mono text-[10px] tracking-widest text-[var(--fg-dim)]">
-                          {a.balance.toFixed(4)} {a.symbol}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-mono text-sm ticker text-[var(--fg)]">{fmtUsd(value)}</div>
-                      <div
-                        className={`font-mono text-[10px] tracking-widest ${
-                          a.change24h >= 0 ? "text-[var(--lime)]" : "text-[var(--rose)]"
-                        }`}
-                      >
-                        {a.change24h >= 0 ? "▲" : "▼"} {Math.abs(a.change24h).toFixed(2)}%
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{ width: `${pct.toFixed(1)}%` }} />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {CHAIN_ORDER.slice(0, 12).map((id) => (
+              <ChainTile key={id} id={id} active={id === activeId} />
+            ))}
           </div>
         </div>
 
@@ -148,10 +134,6 @@ export default function Dashboard({
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="font-mono text-xs ticker text-[var(--fg)]">
-                    {tx.kind === "send" ? "−" : tx.kind === "receive" ? "+" : ""}
-                    {fmtUsd(tx.usd)}
-                  </div>
                   <StatusPill status={tx.status} />
                 </div>
               </li>
@@ -160,6 +142,34 @@ export default function Dashboard({
         </div>
       </section>
     </div>
+  );
+}
+
+function ChainTile({ id, active }: { id: ChainId; active: boolean }) {
+  const { setActive } = useChain();
+  const meta = CHAIN_META[id];
+  return (
+    <button
+      onClick={() => setActive(id)}
+      className={`p-3 border text-left transition-colors ${
+        active
+          ? "bg-[var(--cyan)]/10 border-[var(--cyan)] glow-cyan"
+          : "border-[var(--border)] hover:border-[var(--border-hot)]"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="w-7 h-7 flex items-center justify-center font-mono text-[10px] tracking-wider border"
+          style={{ borderColor: meta.color, color: meta.color }}
+        >
+          {meta.nativeSymbol.slice(0, 4)}
+        </span>
+        <div className="font-mono text-xs text-[var(--fg)] truncate">{meta.name}</div>
+      </div>
+      <div className="font-mono text-[9px] tracking-widest text-[var(--fg-dim)] mt-2 truncate">
+        {meta.serialization}
+      </div>
+    </button>
   );
 }
 

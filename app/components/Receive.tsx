@@ -1,17 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { ASSETS, WALLET_ADDRESS } from "../lib/mock";
+import { useChain, useChainAddress } from "../lib/chains/ChainContext";
 
 export default function Receive() {
-  const [symbol, setSymbol] = useState(ASSETS[0].symbol);
+  const { activeMeta, getAdapter } = useChain();
+  const { address, loading, error } = useChainAddress();
   const [copied, setCopied] = useState(false);
-  const asset = ASSETS.find((a) => a.symbol === symbol)!;
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
 
   function copy() {
-    navigator.clipboard?.writeText(WALLET_ADDRESS);
+    if (!address) return;
+    navigator.clipboard?.writeText(address);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function openExplorer() {
+    if (!address) return;
+    const adapter = await getAdapter();
+    const url = adapter.explorerAddressUrl(address);
+    setExplorerUrl(url);
+    window.open(url, "_blank");
   }
 
   return (
@@ -25,70 +35,88 @@ export default function Receive() {
             </h1>
           </div>
           <div className="font-mono text-[10px] tracking-[0.3em] text-[var(--fg-dim)] text-right">
-            NETWORK
-            <div className="text-[var(--cyan)] glow-cyan tracking-widest mt-1">{asset.network}</div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {ASSETS.map((a) => (
-            <button
-              key={a.symbol}
-              onClick={() => setSymbol(a.symbol)}
-              className={`px-2 py-2.5 font-mono text-[11px] tracking-widest border transition-colors ${
-                symbol === a.symbol
-                  ? "border-[var(--cyan)] text-[var(--cyan)] bg-[var(--cyan)]/10 glow-cyan"
-                  : "border-[var(--border)] text-[var(--fg-dim)] hover:border-[var(--border-hot)] hover:text-[var(--fg)]"
-              }`}
+            CHAIN
+            <div
+              className="tracking-widest mt-1 glow-cyan"
+              style={{ color: activeMeta.color }}
             >
-              {a.symbol}
-            </button>
-          ))}
+              {activeMeta.name.toUpperCase()}
+            </div>
+            <div className="text-[var(--fg-dim)] tracking-widest mt-0.5">
+              {activeMeta.network.toUpperCase()}
+            </div>
+          </div>
         </div>
 
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-8 items-center">
           <div className="relative mx-auto">
             <div className="corner-frame p-3 border border-[var(--border-hot)] box-glow-cyan bg-black">
-              <FakeQR seed={symbol} />
+              <FakeQR seed={address ?? activeMeta.id} />
             </div>
             <div className="absolute -top-2 -left-2 font-mono text-[9px] tracking-widest text-[var(--cyan)] bg-[var(--bg-base)] px-1">
               QR
             </div>
-            <div className="absolute -bottom-2 -right-2 font-mono text-[9px] tracking-widest text-[var(--magenta)] bg-[var(--bg-base)] px-1">
-              {asset.symbol}
+            <div
+              className="absolute -bottom-2 -right-2 font-mono text-[9px] tracking-widest bg-[var(--bg-base)] px-1"
+              style={{ color: activeMeta.color }}
+            >
+              {activeMeta.nativeSymbol}
             </div>
           </div>
 
           <div className="space-y-4">
             <div>
               <div className="font-mono text-[10px] tracking-[0.3em] text-[var(--fg-dim)] mb-2">
-                YOUR ADDRESS
+                YOUR {activeMeta.nativeSymbol} ADDRESS
               </div>
-              <div className="border border-[var(--border-hot)] p-3 font-mono text-xs sm:text-sm break-all bg-black/40 text-[var(--cyan)] glow-cyan">
-                {WALLET_ADDRESS}
+              <div className="border border-[var(--border-hot)] p-3 font-mono text-xs sm:text-sm break-all bg-black/40 text-[var(--cyan)] glow-cyan min-h-[3rem]">
+                {loading ? (
+                  <span className="text-[var(--fg-dim)]">
+                    <span className="pulse-dot inline-block mr-2" />
+                    deriving from realm pubkey…
+                  </span>
+                ) : error ? (
+                  <span className="text-[var(--magenta)]">⊘ {error}</span>
+                ) : (
+                  address
+                )}
+              </div>
+              <div className="font-mono text-[10px] tracking-widest text-[var(--fg-dim)] mt-2">
+                ENCODING · {activeMeta.scheme.toUpperCase()} → {activeMeta.serialization.toUpperCase()}
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button onClick={copy} className="btn-neon">
+              <button onClick={copy} disabled={!address} className="btn-neon disabled:opacity-30">
                 {copied ? "✓ Copied" : "⧉ Copy address"}
               </button>
-              <button className="btn-neon magenta">⇡ Share</button>
-              <button className="btn-neon lime">⤓ Save QR</button>
+              <button onClick={openExplorer} disabled={!address} className="btn-neon magenta disabled:opacity-30">
+                ↗ Explorer
+              </button>
+              {activeMeta.faucet && (
+                <a
+                  href={activeMeta.faucet}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-neon lime"
+                >
+                  ⤓ Faucet
+                </a>
+              )}
             </div>
 
             <div className="divider-h" />
 
             <ul className="font-mono text-[11px] tracking-wider text-[var(--fg-dim)] space-y-1.5">
               <li>
-                <span className="text-[var(--amber)]">!</span> Only send {asset.symbol} on{" "}
-                <span className="text-[var(--cyan)]">{asset.network}</span> to this address.
+                <span className="text-[var(--amber)]">!</span> Only send <span style={{ color: activeMeta.color }}>{activeMeta.nativeSymbol}</span> on{" "}
+                <span className="text-[var(--cyan)]">{activeMeta.name}</span> {activeMeta.network} to this address.
               </li>
               <li>
-                <span className="text-[var(--amber)]">!</span> Cross-chain transfers may result in permanent loss.
+                <span className="text-[var(--amber)]">!</span> Cross-chain transfers result in permanent loss.
               </li>
               <li>
-                <span className="text-[var(--lime)]">●</span> Channel encrypted · 0-confirm visibility ~ 14s.
+                <span className="text-[var(--lime)]">●</span> Address is a chain-specific encoding of the realm Ed25519 pubkey.
               </li>
             </ul>
           </div>
