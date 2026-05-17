@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Motherlode
+
+A multi-chain wallet covering 16 chains (Solana, Stellar, XRPL, Cardano, Polkadot,
+Cosmos, TON, Aptos, Sui, NEAR, Hedera, Algorand, Tezos, Zcash, IOTA, Monero), with
+authentication and threshold key signing handled by [TideCloak](https://tide.org).
+Built on Next.js 16 + React 19.
+
+## Prerequisites
+
+- **Node.js 20.9+** and npm (the build runs on the webpack compiler — see the
+  `--webpack` flag in the npm scripts).
+- **Docker** — `npm run init` runs a TideCloak dev container.
+- **curl** and **jq** — used by the init script.
+- A free port **8080** (TideCloak) and **3000** (the app).
 
 ## Getting Started
 
-First, run the development server:
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Bootstrap TideCloak
+
+This is a **one-time, interactive** step. It starts the TideCloak container,
+creates the realm/client, and exports the adapter config to
+`data/tidecloak.json` (gitignored — the app reads it at runtime).
+
+```bash
+npm run init
+```
+
+Partway through, the script prints an **invite link**. Open it in your browser
+and link your Tide account to the `admin` user. The script polls until the
+account is linked, then finishes approving change-sets and exports the config.
+
+When it prints `Init complete!`, TideCloak is running on
+`http://localhost:8080` (admin console login: `admin` / `password`) and
+`data/tidecloak.json` exists.
+
+Useful overrides (defaults shown):
+
+| Env var          | Default                  | Purpose                         |
+| ---------------- | ------------------------ | ------------------------------- |
+| `TIDECLOAK_URL`  | `http://localhost:8080`  | TideCloak base URL              |
+| `REALM_NAME`     | `motherlode`             | Realm to create                 |
+| `CLIENT_NAME`    | `motherlode-client`      | OIDC client id                  |
+| `CLIENT_APP_URL` | `http://localhost:3000`  | App origin (redirect URIs)      |
+| `ADMIN_EMAIL`    | `info@tide.org`          | Email for the admin user        |
+
+To start over from scratch, wipe the embedded DB and re-run init:
+
+```bash
+docker rm -f tidecloak
+sudo rm -f data/keycloakdb*
+npm run init
+```
+
+### 3. Run the dev server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Sign in with the Tide
+account you linked during init.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Funding testnet wallets (optional)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+All 16 chain addresses are derived from the realm's Ed25519 key in
+`data/tidecloak.json`. To auto-fund the chains with programmatic faucets and
+print addresses + faucet URLs for the rest:
 
-## Learn More
+```bash
+node scripts/fund-test-wallets.mjs
+```
 
-To learn more about Next.js, take a look at the following resources:
+Some chains need a manually provisioned account id. Set these in a `.env.local`
+file (all optional — features degrade gracefully without them):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Env var                          | Used by      |
+| -------------------------------- | ------------ |
+| `NEXT_PUBLIC_NEAR_ACCOUNT_ID`    | NEAR adapter |
+| `NEXT_PUBLIC_HEDERA_ACCOUNT_ID`  | Hedera adapter |
+| `NEXT_PUBLIC_BLOCKFROST_PROJECT_ID` / `NEXT_PUBLIC_RPC_CARDANO` | Cardano adapter |
+| `XRPL_RPC_URL`                   | XRPL proxy   |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Production build
 
-## Deploy on Vercel
+```bash
+npm run build
+npm start
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`npm start` still expects `data/tidecloak.json` to be present. Alternatively,
+provide the adapter config inline via the `CLIENT_ADAPTER` env var (full JSON
+string) instead of the file.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Project layout
+
+- `app/` — Next.js App Router (UI, API routes, chain adapters under
+  `app/lib/chains/`).
+- `scripts/init-tidecloak.sh` — TideCloak bootstrap (`npm run init`).
+- `scripts/fund-test-wallets.mjs` — testnet faucet helper.
+- `data/` — runtime config (`tidecloak.json`, `wallet-policy.json`).
+
+> Note: this project pins a modified build of Next.js. The npm scripts already
+> pass the required `--webpack` flag — run them via `npm run`, not raw `next`.
