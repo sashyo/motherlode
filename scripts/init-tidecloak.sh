@@ -27,8 +27,14 @@ REALM_NAME="${REALM_NAME:-motherlode}"
 CLIENT_NAME="${CLIENT_NAME:-motherlode-client}"
 CLIENT_APP_URL="${CLIENT_APP_URL:-http://localhost:3000}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-info@tide.org}"
+# Ragnarok (VRK) signing requires a rules model registered on the home ORK
+# for this payer ("Model Rules:1 is not registered on this ork"). The prod
+# ORK doesn't have it for the Motherlode payer, so default off — the realm
+# still gets a VVK; only key-rotation/recovery (Ragnarok) is skipped. Set
+# RAGNAROK_ENABLED=true once Rules:1 is registered for the payer on the ORK.
+RAGNAROK_ENABLED="${RAGNAROK_ENABLED:-false}"
 ADAPTER_OUTPUT="${ADAPTER_OUTPUT:-$PROJECT_DIR/data/tidecloak.json}"
-TIDECLOAK_IMAGE="${TIDECLOAK_IMAGE:-tideorg/tidecloak-dev:latest}"
+TIDECLOAK_IMAGE="${TIDECLOAK_IMAGE:-tideorg/tidecloak-stg-dev:latest}"
 
 get_token() {
   curl -s -X POST "$TIDECLOAK_URL/realms/master/protocol/openid-connect/token" \
@@ -124,13 +130,28 @@ if [[ ! "$REALM_STATUS" =~ ^2 ]]; then
 fi
 echo "    Realm created."
 
-echo "==> Initializing Tide realm (license + VRK)..."
+echo "==> Initializing Tide realm (license + VVK, Ragnarok=$RAGNAROK_ENABLED)..."
 TOKEN="$(get_token)"
-curl -s -X POST "$TIDECLOAK_URL/admin/realms/$REALM_NAME/vendorResources/setUpTideRealm" \
+SETUP_RESP="$(curl -s -w "\n%{http_code}" -X POST "$TIDECLOAK_URL/admin/realms/$REALM_NAME/vendorResources/setUpTideRealm" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "email=$ADMIN_EMAIL" \
-  --data-urlencode "isRagnarokEnabled=true" > /dev/null
+  --data-urlencode "isRagnarokEnabled=$RAGNAROK_ENABLED")"
+SETUP_CODE="$(echo "$SETUP_RESP" | tail -n1)"
+SETUP_BODY="$(echo "$SETUP_RESP" | sed '$d')"
+
+# Don't let a failed key-gen silently continue — it resurfaces ~40 steps
+# later as a misleading "tide-realm-admin role not found".
+if [[ ! "$SETUP_CODE" =~ ^2 ]] || echo "$SETUP_BODY" | grep -qiE 'Could not (create tide realm|generate)|not registered on this ork|Payer .* not found'; then
+  echo "ERROR: setUpTideRealm failed (HTTP $SETUP_CODE)."
+  echo "  Response: ${SETUP_BODY:-<empty>}"
+  echo "  TideCloak log:"
+  docker logs tidecloak 2>&1 | grep -iE 'CreateFreeTierLicense|Payer .* not found|SetVVK|Model Rules|Could not (create tide realm|generate)' | grep -viE '^\s+at ' | tail -5 | sed 's/^/    /'
+  echo "  Hint: 'Payer not found' → set PAYER_PUBLIC. 'Model Rules:1 not"
+  echo "  registered' → register the rules model on the ORK for the payer,"
+  echo "  or keep RAGNAROK_ENABLED=false."
+  exit 1
+fi
 
 echo "==> Enabling IGA..."
 TOKEN="$(get_token)"
