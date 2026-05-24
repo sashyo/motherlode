@@ -66,6 +66,20 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000). Sign in with the Tide
 account you linked during init.
 
+### 4. Sign the wallet policy
+
+Before any transaction can be signed, an admin must deploy and sign the wallet
+policy. Navigate to:
+
+```
+http://localhost:3000/admin/deploy-policy
+```
+
+This page hashes the Forseti contract, drives ORK approval to obtain a VVK
+signature, and commits the signed policy (`POST /api/wallet/policy`). Until this
+ceremony completes, transaction signing fails because the runtime signer has no
+committed policy to fetch.
+
 ## Funding testnet wallets (optional)
 
 All 16 chain addresses are derived from the realm's Ed25519 key in
